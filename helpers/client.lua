@@ -14,6 +14,7 @@ function _client.turn_off(c)
         if tag ~= current_tag then table.insert(ctags, tag) end
     end
     c:tags(ctags)
+    c.floating = false
 end
 
 --- Turn on passed client (add current tag to window's tags)

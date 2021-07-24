@@ -183,9 +183,6 @@ function Scratchpad:toggle()
     end
 
     if is_turn_off then
-        if self.disable_floating_on_close and matches[1].floating == true then
-            matches[1].floating = false
-        end
         self:turn_off()
     else
         self:turn_on()

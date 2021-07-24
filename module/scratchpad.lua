@@ -98,6 +98,7 @@ function Scratchpad:turn_on()
     else
         -- if no client was found, spawn one, find the corresponding window,
         --  apply the properties only once (until the next closing)
+        spawn_on_tag = false
         local pid = awful.spawn.with_shell(self.command)
         local function inital_apply(c)
             if helpers.client.is_child_of(c, pid) then self:apply(c) end

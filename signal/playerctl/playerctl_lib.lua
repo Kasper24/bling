@@ -9,6 +9,8 @@
 --      artist  (string)
 --      album_path (string)
 --      player_name (string)
+--      album (string)
+--      new (bool)
 -- bling::playerctl::position
 --      interval_sec (number)
 --      length_sec (number)
@@ -29,6 +31,7 @@ local ignore = {}
 local priority = {}
 local update_on_activity = true
 local interval = 1
+local debounce_delay = 0.35
 
 -- Track position callback
 local last_position = -1
@@ -52,27 +55,48 @@ local function position_cb()
 end
 
 local function get_album_art(url)
-    return awful.util.shell
-        .. [[ -c '
+    return awful.util.shell .. [[ -c '
+        tmp_cover_path=]] .. os.tmpname() .. [[.png
+        curl -s ']] .. url .. [[' --output $tmp_cover_path
+        echo "$tmp_cover_path"
+    ']]
+end
 
-tmp_dir="$XDG_CACHE_HOME/awesome/"
+local function emit_title_artist_album_signal(title, artist, artUrl, player_name, album, new)
+    title = gears.string.xml_escape(title)
+    artist = gears.string.xml_escape(artist)
+    album = gears.string.xml_escape(album)
 
-if [ -z "$XDG_CACHE_HOME" ]; then
-    tmp_dir="$HOME/.cache/awesome/"
-fi
+    -- Spotify client doesn't report its art URL's correctly...
+    if player_name == "spotify" then
+        artUrl = artUrl:gsub("open.spotify.com", "i.scdn.co")
+    end
 
-tmp_cover_path="${tmp_dir}cover.png"
-
-if [ ! -d "$tmp_dir" ]; then
-    mkdir -p $tmp_dir
-fi
-
-curl -s ']]
-        .. url
-        .. [[' --output $tmp_cover_path
-
-echo "$tmp_cover_path"
-']]
+    if artUrl ~= "" then
+        awful.spawn.with_line_callback(get_album_art(artUrl), {
+            stdout = function(line)
+                awesome.emit_signal(
+                    "bling::playerctl::title_artist_album",
+                    title,
+                    artist,
+                    line,
+                    player_name,
+                    album,
+                    new
+                )
+            end
+        })
+    else
+        awesome.emit_signal(
+            "bling::playerctl::title_artist_album",
+            title,
+            artist,
+            "",
+            player_name,
+            album,
+            new
+        )
+    end
 end
 
 -- Metadata callback for title, artist, and album art
@@ -93,10 +117,7 @@ local function metadata_cb(player, metadata)
         artist = artist .. ", " .. data["xesam:artist"][i]
     end
     local artUrl = data["mpris:artUrl"] or ""
-    -- Spotify client doesn't report its art URL's correctly...
-    if player.player_name == "spotify" then
-        artUrl = artUrl:gsub("open.spotify.com", "i.scdn.co")
-    end
+    local album = data["xesam:album"] or ""
 
     if player == manager.players[1] then
         -- Callback can be called even though values we care about haven't
@@ -111,40 +132,16 @@ local function metadata_cb(player, metadata)
                 return
             end
 
-            if metadata_timer ~= nil then
-                if metadata_timer.started then
-                    metadata_timer:stop()
-                end
+            if metadata_timer ~= nil and metadata_timer.started then
+                metadata_timer:stop()
             end
 
-            metadata_timer = gears.timer({
-                timeout = 0.3,
+            metadata_timer = gears.timer {
+                timeout = debounce_delay,
                 autostart = true,
                 single_shot = true,
-                callback = function()
-                    if artUrl ~= "" then
-                        awful.spawn.with_line_callback(get_album_art(artUrl), {
-                            stdout = function(line)
-                                awesome.emit_signal(
-                                    "bling::playerctl::title_artist_album",
-                                    title,
-                                    artist,
-                                    line,
-                                    player.player_name
-                                )
-                            end,
-                        })
-                    else
-                        awesome.emit_signal(
-                            "bling::playerctl::title_artist_album",
-                            title,
-                            artist,
-                            "",
-                            player.player_name
-                        )
-                    end
-                end,
-            })
+                callback = function() emit_title_artist_album_signal(title, artist, artUrl, player.player_name, album, false) end
+            }
 
             -- Re-sync with position timer when track changes
             position_timer:again()
@@ -178,6 +175,16 @@ local function playback_status_cb(player, status)
             )
         end
     end
+end
+
+local function get_current_player_info(player)
+    local title = Playerctl.Player.get_title(player) or ""
+    local artist = Playerctl.Player.get_artist(player) or ""
+    local artUrl = Playerctl.Player.print_metadata_prop(player, "mpris:artUrl") or ""
+    local album = Playerctl.Player.get_album(player) or ""
+
+    playback_status_cb(player, player.playback_status)
+    emit_title_artist_album_signal(title, artist, artUrl, player.player_name, album, true)
 end
 
 -- Determine if player should be managed
@@ -271,6 +278,10 @@ local function start_manager()
         init_player(name)
     end
 
+    if manager.players[1] then
+        get_current_player_info(manager.players[1])
+    end
+
     -- Callback to manage new players
     function manager:on_name_appeared(name)
         init_player(name)
@@ -282,6 +293,8 @@ local function start_manager()
             metadata_timer:stop()
             position_timer:stop()
             awesome.emit_signal("bling::playerctl::no_players")
+        else
+            get_current_player_info(manager.players[1])
         end
     end
 end
@@ -291,6 +304,7 @@ local function parse_args(args)
     if args then
         update_on_activity = args.update_on_activity or update_on_activity
         interval = args.interval or interval
+        debounce_delay = args.debounce_delay or debounce_delay
 
         if type(args.ignore) == "string" then
             ignore[args.ignore] = true
@@ -313,10 +327,10 @@ local function playerctl_enable(args)
     -- Grab settings from beautiful variables if not set explicitly
     args.ignore = args.ignore or beautiful.playerctl_ignore
     args.player = args.player or beautiful.playerctl_player
-    args.update_on_activity = args.update_on_activity
-        or beautiful.playerctl_update_on_activity
-    args.interval = args.interval
-        or beautiful.playerctl_position_update_interval
+    args.update_on_activity = args.update_on_activity or
+                              beautiful.playerctl_update_on_activity
+    args.interval = args.interval or beautiful.playerctl_position_update_interval
+    args.debounce_delay = args.debounce_delay or beautiful.playerctl_position_update_debounce_delay
     parse_args(args)
 
     -- Grab playerctl library
@@ -338,6 +352,7 @@ local function playerctl_disable()
     priority = {}
     update_on_activity = true
     interval = 1
+    debounce_delay = 0.35
     -- Reset default values
     last_position = -1
     last_length = -1

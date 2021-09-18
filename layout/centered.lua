@@ -8,7 +8,7 @@ local mylayout = {}
 
 mylayout.name = "centered"
 
-local is_first_time_with_no_slave = false
+local is_first_time_with_no_slave = true
 
 function mylayout.arrange(p)
     local area = p.workarea
@@ -34,19 +34,17 @@ function mylayout.arrange(p)
 
     -- Special case: one slave -> relapse into awesomes masterstack tile layout
     if nslaves == 1 then
-        t.master_width_factor = math.min(t.master_width_factor, 0.9)
+        t.master_width_factor = math.min(t.master_width_factor, 0.8)
         awful.layout.suit.tile.right.arrange(p)
+        is_first_time_with_no_slave = true
         return
-    end
-
-    if nslaves < 1 then
-        if is_first_time_with_no_slave == false then
+    elseif nslaves == 0 and nmaster > 0 then
+        if is_first_time_with_no_slave == true then
+            t.master_width_factor = 1
             master_area_width = area.width
             master_area_x = area.x
+            is_first_time_with_no_slave = false
         end
-        is_first_time_with_no_slave = true
-    else
-        is_first_time_with_no_slave = false
     end
 
     -- iterate through masters

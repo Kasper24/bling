@@ -8,6 +8,8 @@ local mylayout = {}
 
 mylayout.name = "centered"
 
+local is_first_time_with_no_slave = false
+
 function mylayout.arrange(p)
     local area = p.workarea
     local t = p.tag or screen[p.screen].selected_tag
@@ -35,6 +37,16 @@ function mylayout.arrange(p)
         t.master_width_factor = math.min(t.master_width_factor, 0.9)
         awful.layout.suit.tile.right.arrange(p)
         return
+    end
+
+    if nslaves < 1 then
+        if is_first_time_with_no_slave == false then
+            master_area_width = area.width
+            master_area_x = area.x
+        end
+        is_first_time_with_no_slave = true
+    else
+        is_first_time_with_no_slave = false
     end
 
     -- iterate through masters

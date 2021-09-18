@@ -32,14 +32,9 @@ function mylayout.arrange(p)
 
     -- Special case: one slave -> relapse into awesomes masterstack tile layout
     if nslaves == 1 then
+        t.master_width_factor = math.min(t.master_width_factor, 0.9)
         awful.layout.suit.tile.right.arrange(p)
         return
-    end
-
-    -- Special case: no slaves -> fullscreen master area
-    if nslaves < 1 then
-        master_area_width = area.width
-        master_area_x = area.x
     end
 
     -- iterate through masters

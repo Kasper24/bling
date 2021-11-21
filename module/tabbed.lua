@@ -54,6 +54,9 @@ tabbed.remove = function(c)
     end
     local tabobj = c.bling_tabbed
     table.remove(tabobj.clients, tabobj.focused_idx)
+    if #tabobj.clients > 0 then
+        tabobj.parent = tabobj.clients[1].window
+    end
     if not beautiful.tabbar_disable then
         awful.titlebar.hide(c, bar.position)
     end
@@ -70,6 +73,10 @@ tabbed.pop = function()
         return
     end
     tabbed.remove(client.focus)
+    local tabobj = client.focus.bling_tabbed
+    if tabobj and #tabobj.clients > 0 then
+        tabobj.parent = tabobj.clients[1].window
+    end
 end
 
 -- adds a client to a given tabobj
@@ -254,6 +261,7 @@ end
 
 tabbed.init = function(c)
     local tabobj = {}
+    tabobj.parent = c.window
     tabobj.clients = { c }
     c:connect_signal("focus", update_tabbar_from)
     c:connect_signal("unfocus", update_tabbar_from)
